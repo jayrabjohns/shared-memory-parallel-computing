@@ -1,0 +1,1 @@
+cc -Wall -Wextra -Wconversion -o relaxation relaxation.c
