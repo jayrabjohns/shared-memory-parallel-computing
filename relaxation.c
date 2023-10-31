@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
+#include <math.h>
 
 #include "relaxation.h"
 
@@ -28,35 +30,40 @@ void run(size_t size, double (*values)[size][size])
     array_2d_alloc_no_err(size, size, &buf);
     memcpy(buf, values, sizeof(*buf));
 
-    printf("Before:\n");
-    array_2d_print(size, size, *buf);
-
-    solve(size, buf, 1, 0.1);
-    printf("After:\n");
-    array_2d_print(size, size, *buf);
+    solve(size, buf, 1, 0.01);
 
     free(buf);
 }
 
 void solve(size_t size, double (*values)[size][size], size_t thread_count, double precision)
 {
-    ++precision;
-    ++thread_count;
+    double(*prev_values)[size][size];
+    array_2d_alloc_no_err(size, size, &prev_values);
+    memcpy(prev_values, values, sizeof(*prev_values));
 
-    double(*values_copy)[size][size];
-    array_2d_alloc_no_err(size, size, &values_copy);
-    memcpy(values_copy, values, sizeof(*values_copy));
-
-    for (size_t row = 1; row < size - 1; row++)
+    size_t iterations = 0;
+    bool converged = false;
+    while (!converged)
     {
-        for (size_t col = 1; col < size - 1; col++)
+        converged = true;
+        for (size_t row = 1; row < size - 1; row++)
         {
-            double neighbours_sum = (*values_copy)[row - 1][col] + (*values_copy)[row + 1][col] + (*values_copy)[row][col - 1] + (*values_copy)[row][col + 1];
-            (*values)[row][col] = neighbours_sum / 4.0;
-        }
-    }
+            for (size_t col = 1; col < size - 1; col++)
+            {
+                const double neighbours_sum = (*prev_values)[row - 1][col] + (*prev_values)[row + 1][col] + (*prev_values)[row][col - 1] + (*prev_values)[row][col + 1];
+                (*values)[row][col] = neighbours_sum / 4.0;
 
-    return;
+                const double diff = fabs((*values)[row][col] - (*prev_values)[row][col]);
+                if (diff > precision)
+                    converged = false;
+            }
+        }
+
+        ++iterations;
+        printf("iteration: %ld\n", iterations);
+        array_2d_print(size, size, *values);
+        memcpy(prev_values, values, sizeof(*prev_values));
+    }
 }
 
 void array_2d_alloc_no_err(size_t rows, size_t cols, double (**values)[rows][cols])
