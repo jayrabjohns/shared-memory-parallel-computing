@@ -3,6 +3,7 @@
 #include <string.h>
 #include <stdbool.h>
 #include <math.h>
+#include <pthread.h>
 
 #include "relaxation.h"
 
@@ -18,9 +19,67 @@ void testcase_1()
     run(size, &test_values);
 }
 
+void testcase_2()
+{
+    printf("testcase 2:\n");
+    size_t size = 10;
+    double test_values[10][10] = {{1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0},
+                                  {1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
+                                  {1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
+                                  {1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
+                                  {1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
+                                  {1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
+                                  {1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
+                                  {1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
+                                  {1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
+                                  {1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}};
+
+    run(size, &test_values);
+}
+
+void testcase_3()
+{
+    printf("testcase 3:\n");
+    static const size_t size = 100;
+    double test_values[size][size];
+
+    for (size_t j = 0; j < size; j++)
+        test_values[0][j] = 1.0f;
+
+    for (size_t i = 1; i < size; i++)
+    {
+        test_values[i][0] = 1.0f;
+        for (size_t j = 1; j < size; j++)
+            test_values[i][j] = 0.0f;
+    }
+
+    for (size_t j = 0; j < size; j++)
+        test_values[j][size - 1] = 1.0f;
+
+    run(size, &test_values);
+}
+
 int main(void)
 {
-    testcase_1();
+    static const size_t size = 10000;
+    double(*buf)[size][size];
+    array_2d_alloc_no_err(size, size, &buf);
+
+    load_test3(buf);
+
+    for (size_t j = 0; j < size; j++)
+        (*buf)[0][j] = 1.0f;
+
+    for (size_t i = 1; i < size; i++)
+    {
+        (*buf)[i][0] = 1.0f;
+        for (size_t j = 1; j < size; j++)
+            (*buf)[i][j] = 0.0f;
+    }
+
+    solve(size, buf, 1, 0.01);
+
+    free(buf);
     return 0;
 }
 
@@ -35,7 +94,92 @@ void run(size_t size, double (*values)[size][size])
     free(buf);
 }
 
+// TODO: malloc functions for error andling; refactor args array as single 2d array (single free)
 void solve(size_t size, double (*values)[size][size], size_t thread_count, double precision)
+{
+    thread_count = (size < thread_count ? size : thread_count);
+
+    double(*prev_values)[size][size];
+    array_2d_alloc_no_err(size, size, &prev_values);
+    memcpy(prev_values, values, sizeof(*prev_values));
+
+    const size_t rows_per_thread = size / thread_count;
+    const size_t rows_last_thread = size % thread_count;
+
+    // bool *converged = malloc(thread_count * sizeof(bool));
+    // pthread_t *handles = malloc(thread_count * sizeof(pthread_t));
+    // solve_args(*args) = malloc(sizeof(solve_args));
+    bool *thread_converged;
+    pthread_t *handles;
+    solve_args(*args)[thread_count];
+    thread_handlers_alloc_no_err(thread_count, handles, &args, thread_converged);
+
+    for (size_t i = 0; i < thread_count; i++)
+    {
+
+        (*args)[i].size = size;
+        (*args)[i].values = values;
+        (*args)[i].prev_values = prev_values;
+        (*args)[i].precision = precision;
+        (*args)[i].start_row = i * rows_per_thread;
+        (*args)[i].end_row = (*args)[i].start_row + (i == thread_count - 1 ? rows_last_thread : rows_per_thread);
+        (*args)[i].converged = &thread_converged[i];
+    }
+
+    size_t iterations = 0;
+    bool converged = false;
+    while (!converged)
+    {
+        for (size_t i = 0; i < thread_count; i++)
+        {
+            thread_converged[i] = true;
+            (*args)[i].values = values;
+            (*args)[i].prev_values = prev_values;
+            pthread_create(&handles[i], NULL, solve_chunk, args);
+        }
+
+        for (size_t i = 0; i < thread_count; i++)
+        {
+            pthread_join(&handles[i], NULL);
+        }
+
+        ++iterations;
+        printf("iteration: %ld\n", iterations);
+        // array_2d_print(size, size, values, stdout);
+        memcpy(prev_values, values, sizeof(*prev_values));
+
+        converged = true;
+        for (size_t i = 0; i < thread_count; i++)
+        {
+            if (!(*args)->converged)
+            {
+                converged = false;
+                break;
+            }
+        }
+    }
+}
+
+void solve_chunk(solve_args *args)
+{
+    double(*values)[args->size][args->size] = (double(*)[args->size][args->size])args->values;
+    double(*prev_values)[args->size][args->size] = (double(*)[args->size][args->size])args->prev_values;
+
+    for (size_t row = args->start_row; row < args->end_row - 1; row++)
+    {
+        for (size_t col = 1; col < args->size - 1; col++)
+        {
+            const double neighbours_sum = (*prev_values)[row - 1][col] + (*prev_values)[row + 1][col] + (*prev_values)[row][col - 1] + (*prev_values)[row][col + 1];
+            (*values)[row][col] = neighbours_sum / 4.0;
+
+            const double diff = fabs((*values)[row][col] - (*prev_values)[row][col]);
+            if (diff > args->precision)
+                *(args->converged) = false;
+        }
+    }
+}
+
+void solve_sync(size_t size, double (*values)[size][size], double precision)
 {
     double(*prev_values)[size][size];
     array_2d_alloc_no_err(size, size, &prev_values);
@@ -61,8 +205,15 @@ void solve(size_t size, double (*values)[size][size], size_t thread_count, doubl
 
         ++iterations;
         printf("iteration: %ld\n", iterations);
-        array_2d_print(size, size, *values);
+        // array_2d_print(size, size, values, stdout);
         memcpy(prev_values, values, sizeof(*prev_values));
+    }
+
+    FILE *file = fopen("log", "w");
+    if (file)
+    {
+        array_2d_print(size, size, values, file);
+        fclose(file);
     }
 }
 
@@ -76,28 +227,41 @@ void array_2d_alloc_no_err(size_t rows, size_t cols, double (**values)[rows][col
     }
 }
 
-void array_2d_print(size_t rows, size_t cols, double array[rows][cols])
+void thread_handlers_alloc_no_err(size_t thread_count, pthread_t *handles, solve_args (**args)[thread_count], bool *converged)
+{
+    handles = malloc(thread_count * sizeof(pthread_t));
+    if (handles == NULL)
+    {
+        fprintf(stderr, "Cannot allocate memory for thread handles.\n");
+        exit(1);
+    }
+
+    *args = malloc(thread_count * sizeof(solve_args));
+    if (*args == NULL)
+    {
+        fprintf(stderr, "Cannot allocate memory for thread args.\n");
+        free(handles);
+        exit(1);
+    }
+
+    if (converged == NULL)
+    {
+        fprintf(stderr, "Cannot allocate memory for array.\n");
+        free(handles);
+        free(args);
+        exit(1);
+    }
+}
+
+void array_2d_print(size_t rows, size_t cols, double (*array)[rows][cols], FILE *stream)
 {
     for (size_t i = 0; i < rows; i++)
     {
         for (size_t j = 0; j < cols; j++)
         {
-            printf("%f ", array[i][j]);
+            fprintf(stream, "%f ", (*array)[i][j]);
         }
 
-        printf("\n");
+        fprintf(stream, "\n");
     }
 }
-
-// void panic(const char *error_str)
-// {
-//     if (error_str)
-//         fprintf(stderr, "\n%s", error_str);
-
-//     exit(1);
-// }
-
-// void panic_malloc()
-// {
-//     panic("Cannot allocate memory.\n");
-// }
