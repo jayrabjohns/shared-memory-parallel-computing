@@ -61,11 +61,9 @@ void testcase_3()
 
 int main(void)
 {
-    static const size_t size = 10000;
+    static const size_t size = 10;
     double(*buf)[size][size];
     array_2d_alloc_no_err(size, size, &buf);
-
-    load_test3(buf);
 
     for (size_t j = 0; j < size; j++)
         (*buf)[0][j] = 1.0f;
@@ -98,32 +96,31 @@ void run(size_t size, double (*values)[size][size])
 void solve(size_t size, double (*values)[size][size], size_t thread_count, double precision)
 {
     thread_count = (size < thread_count ? size : thread_count);
+    const size_t rows_per_thread = size / thread_count;
+    const size_t rows_last_thread = size % thread_count;
 
     double(*prev_values)[size][size];
     array_2d_alloc_no_err(size, size, &prev_values);
     memcpy(prev_values, values, sizeof(*prev_values));
 
-    const size_t rows_per_thread = size / thread_count;
-    const size_t rows_last_thread = size % thread_count;
-
     // bool *converged = malloc(thread_count * sizeof(bool));
     // pthread_t *handles = malloc(thread_count * sizeof(pthread_t));
     // solve_args(*args) = malloc(sizeof(solve_args));
-    bool *thread_converged;
+    // bool *thread_converged;
     pthread_t *handles;
-    solve_args(*args)[thread_count];
-    thread_handlers_alloc_no_err(thread_count, handles, &args, thread_converged);
+    solve_args *args;
+    if (!try_alloc_thread_handlers(thread_count, &handles, &args))
+        return; // false
 
     for (size_t i = 0; i < thread_count; i++)
     {
-
-        (*args)[i].size = size;
-        (*args)[i].values = values;
-        (*args)[i].prev_values = prev_values;
-        (*args)[i].precision = precision;
-        (*args)[i].start_row = i * rows_per_thread;
-        (*args)[i].end_row = (*args)[i].start_row + (i == thread_count - 1 ? rows_last_thread : rows_per_thread);
-        (*args)[i].converged = &thread_converged[i];
+        args[i].size = size;
+        args[i].values = (double *)values;
+        args[i].prev_values = (double *)prev_values;
+        args[i].precision = precision;
+        args[i].start_row = 1 + i * rows_per_thread;
+        args[i].end_row = args[i].start_row + (i == thread_count - 1 ? rows_last_thread : rows_per_thread);
+        *(args[i].converged) = true;
     }
 
     size_t iterations = 0;
@@ -132,26 +129,26 @@ void solve(size_t size, double (*values)[size][size], size_t thread_count, doubl
     {
         for (size_t i = 0; i < thread_count; i++)
         {
-            thread_converged[i] = true;
-            (*args)[i].values = values;
-            (*args)[i].prev_values = prev_values;
-            pthread_create(&handles[i], NULL, solve_chunk, args);
+            *(args[i].converged) = true;
+            args[i].values = (double *)values;
+            args[i].prev_values = (double *)prev_values;
+            pthread_create(&handles[i], NULL, (void *(*)(void *))solve_chunk, &args[i]);
         }
 
         for (size_t i = 0; i < thread_count; i++)
         {
-            pthread_join(&handles[i], NULL);
+            pthread_join(handles[i], NULL);
         }
 
         ++iterations;
         printf("iteration: %ld\n", iterations);
-        // array_2d_print(size, size, values, stdout);
+        array_2d_print(size, size, values, stdout);
         memcpy(prev_values, values, sizeof(*prev_values));
 
         converged = true;
         for (size_t i = 0; i < thread_count; i++)
         {
-            if (!(*args)->converged)
+            if (*(args->converged) == false)
             {
                 converged = false;
                 break;
@@ -160,7 +157,7 @@ void solve(size_t size, double (*values)[size][size], size_t thread_count, doubl
     }
 }
 
-void solve_chunk(solve_args *args)
+void *solve_chunk(solve_args *args)
 {
     double(*values)[args->size][args->size] = (double(*)[args->size][args->size])args->values;
     double(*prev_values)[args->size][args->size] = (double(*)[args->size][args->size])args->prev_values;
@@ -174,9 +171,10 @@ void solve_chunk(solve_args *args)
 
             const double diff = fabs((*values)[row][col] - (*prev_values)[row][col]);
             if (diff > args->precision)
-                *(args->converged) = false;
+                args->converged = false;
         }
     }
+    return NULL;
 }
 
 void solve_sync(size_t size, double (*values)[size][size], double precision)
@@ -227,30 +225,38 @@ void array_2d_alloc_no_err(size_t rows, size_t cols, double (**values)[rows][col
     }
 }
 
-void thread_handlers_alloc_no_err(size_t thread_count, pthread_t *handles, solve_args (**args)[thread_count], bool *converged)
+bool try_alloc_thread_handlers(size_t thread_count, pthread_t **handles, solve_args **args)
 {
-    handles = malloc(thread_count * sizeof(pthread_t));
-    if (handles == NULL)
+    *handles = malloc(thread_count * sizeof(pthread_t));
+    if (*handles == NULL)
     {
         fprintf(stderr, "Cannot allocate memory for thread handles.\n");
-        exit(1);
+        return false;
     }
 
     *args = malloc(thread_count * sizeof(solve_args));
     if (*args == NULL)
     {
         fprintf(stderr, "Cannot allocate memory for thread args.\n");
-        free(handles);
-        exit(1);
+        free(*handles);
+        return false;
     }
 
-    if (converged == NULL)
+    bool *converged_flags = malloc(thread_count * sizeof(bool));
+    if (converged_flags == NULL)
     {
-        fprintf(stderr, "Cannot allocate memory for array.\n");
-        free(handles);
-        free(args);
-        exit(1);
+        fprintf(stderr, "Cannot allocate memory for convergence_flags.\n");
+        free(*handles);
+        free(*args);
+        return false;
     }
+
+    for (size_t i = 0; i < thread_count; i++)
+    {
+        (*args)[i].converged = &converged_flags[i];
+    }
+
+    return true;
 }
 
 void array_2d_print(size_t rows, size_t cols, double (*array)[rows][cols], FILE *stream)
