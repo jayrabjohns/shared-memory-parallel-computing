@@ -1,5 +1,6 @@
 {
     "files.associations": {
-        "log-mismatching_results_sync_async_checking_convergence_inside_threads": "c"
+        "log-mismatching_results_sync_async_checking_convergence_inside_threads": "c",
+        "relaxation.h": "c"
     }
 }
