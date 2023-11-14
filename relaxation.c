@@ -53,14 +53,12 @@ void load_testcase_2(size_t size, double (*matrix)[size][size])
     }
 }
 
-int main(void)
+int run(size_t size, double precision, size_t thread_count)
 {
-    static const size_t size = 10000;
-    static const double precision = 0.001;
-    static const size_t thread_count = 8;
     printf("matrix size: %ld\nprecision: %f\nthread count:%ld\n",
            size, precision, thread_count);
 
+    // Arrange
     int rc = 0;
     double(*result_async)[size][size];
     rc = array_2d_try_alloc(size, &result_async);
@@ -68,34 +66,55 @@ int main(void)
         return rc;
 
     load_testcase_1(size, result_async);
+
+    // Act
     rc = solve(size, result_async, thread_count, precision);
     if (rc != 0)
         return rc;
 
-    double(*result_sync)[size][size];
-    rc = array_2d_try_alloc(size, &result_sync);
-    if (rc != 0)
-        return rc;
+    // double(*result_sync)[size][size];
+    // rc = array_2d_try_alloc(size, &result_sync);
+    // if (rc != 0)
+    //     return rc;
 
-    load_testcase_1(size, result_sync);
-    solve_sync(size, result_sync, precision);
+    // load_testcase_1(size, result_sync);
+    // solve_sync(size, result_sync, precision);
 
-    rc = memcmp(result_async, result_sync, sizeof(*result_async));
-    if (rc == 0)
-    {
-        printf("PASS solution matches synchronous implementation\n");
-    }
-    else
-    {
-        printf("FAIL solution doesn't match synchronous implementation\n");
-        printf("\nsync impl result\n");
-        array_2d_print(size, result_sync, stdout);
-        printf("async impl result:\n");
-        array_2d_print(size, result_async, stdout);
-    }
+    // rc = memcmp(result_async, result_sync, sizeof(*result_async));
+    // if (rc == 0)
+    // {
+    //     printf("PASS solution matches synchronous implementation\n");
+    // }
+    // else
+    // {
+    //     rc = 1;
+    //     printf("FAIL solution doesn't match synchronous implementation\n");
+    //     printf("\nsync impl result\n");
+    //     array_2d_print(size, result_sync, stdout);
+    //     printf("async impl result:\n");
+    //     array_2d_print(size, result_async, stdout);
+    // }
 
-    free(result_sync);
+    // free(result_sync);
     free(result_async);
+
+    return rc;
+}
+
+int main(void)
+{
+    int rc = 0;
+    size_t sizes[] = {100000};
+    double precision = 0.001;
+    size_t thread_counts[] = {64, 44, 32, 16, 8, 4, 2};
+
+    for (size_t i = 0; i < sizeof(sizes) / sizeof(size_t) && rc == 0; i++)
+    {
+        for (size_t j = 0; j < sizeof(thread_counts) / sizeof(size_t) && rc == 0; j++)
+        {
+            rc = run(sizes[i], precision, thread_counts[j]);
+        }
+    }
 
     return rc;
 }

@@ -1,2 +1,2 @@
 #!/bin/bash
-cc -Wall -Wextra -Wconversion -o relaxation relaxation.c
+cc -lpthread -Wall -Wextra -Wconversion -o relaxation relaxation.c
