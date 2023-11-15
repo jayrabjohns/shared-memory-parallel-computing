@@ -110,9 +110,9 @@ int run(size_t size, double precision, size_t thread_count)
 int main(void)
 {
     int rc = 0;
-    size_t sizes[] = {100000};
+    size_t sizes[] = {20000};
     double precision = 0.001;
-    size_t thread_counts[] = {64, 44, 32, 16, 8, 4, 2};
+    size_t thread_counts[] = {4, 2};
 
     for (size_t i = 0; i < sizeof(sizes) / sizeof(size_t) && rc == 0; i++)
     {
@@ -122,10 +122,20 @@ int main(void)
         }
     }
 
+    // double(*result_sync)[20000][20000];
+    // rc = array_2d_try_alloc(20000, &result_sync);
+    // if (rc != 0)
+    //     return rc;
+
+    // load_testcase_1(20000, result_sync);
+    // solve_sync(20000, result_sync, precision);
+
+    // free(result_sync);
+
     return rc;
 }
 
-int solve(size_t size, double (*values)[size][size], size_t thread_count,
+int solve(size_t size, double (*matrix)[size][size], size_t thread_count,
           double precision)
 {
     thread_count = (size < thread_count ? size : thread_count);
@@ -138,20 +148,20 @@ int solve(size_t size, double (*values)[size][size], size_t thread_count,
     // of cores available (asusming one thread per core)
 
     int rc;
-    double(*prev_values)[size][size];
+    double(*prev_matrix)[size][size];
     pthread_t *handles;
     solve_args *args;
 
-    rc = solve_try_alloc(size, &prev_values, thread_count, &handles, &args);
+    rc = solve_try_alloc(size, &prev_matrix, thread_count, &handles, &args);
     if (rc != 0)
         return rc;
 
-    memcpy(prev_values, values, sizeof(*prev_values));
+    memcpy(prev_matrix, matrix, sizeof(*prev_matrix));
     for (size_t i = 0; i < thread_count; i++)
     {
         args[i].size = size;
-        args[i].values = (double *)values;
-        args[i].prev_values = (double *)prev_values;
+        args[i].matrix = (double *)matrix;
+        args[i].prev_matrix = (double *)prev_matrix;
         args[i].start_row = i * rows_per_thread + 1;
         if (i == thread_count - 1)
             args[i].end_row = size - 1;
@@ -172,8 +182,8 @@ int solve(size_t size, double (*values)[size][size], size_t thread_count,
     {
         for (size_t i = 0; i < thread_count; i++)
         {
-            args[i].values = (double *)values;
-            args[i].prev_values = (double *)prev_values;
+            args[i].matrix = (double *)matrix;
+            args[i].prev_matrix = (double *)prev_matrix;
             void *(*thunk)(void *) = (void *(*)(void *))solve_chunk;
             pthread_create(&handles[i], NULL, thunk, &args[i]);
         }
@@ -183,8 +193,8 @@ int solve(size_t size, double (*values)[size][size], size_t thread_count,
             pthread_join(handles[i], NULL);
         }
 
-        converged = matrix_has_converged(precision, size, values, prev_values);
-        memcpy(prev_values, values, sizeof(*prev_values));
+        converged = matrix_has_converged(precision, size, matrix, prev_matrix);
+        memcpy(prev_matrix, matrix, sizeof(*prev_matrix));
         ++iterations;
 
         time(&now);
@@ -196,7 +206,7 @@ int solve(size_t size, double (*values)[size][size], size_t thread_count,
     printf("[ASYNC] solved in %ld iterations in %.0lfs\n",
            iterations, elapsed_time);
 
-    free(prev_values);
+    free(prev_matrix);
     free(handles);
     free(args);
     return 0;
@@ -205,34 +215,34 @@ int solve(size_t size, double (*values)[size][size], size_t thread_count,
 void *solve_chunk(solve_args *args)
 {
     size_t size = args->size;
-    double(*values)[size][size] = (double(*)[size][size])args->values;
-    double(*prev_values)[size][size] = (double(*)[size][size])args->prev_values;
+    double(*matrix)[size][size] = (double(*)[size][size])args->matrix;
+    double(*prev_matrix)[size][size] = (double(*)[size][size])args->prev_matrix;
 
     for (size_t row = args->start_row; row < args->end_row; row++)
     {
         for (size_t col = 1; col < args->size - 1; col++)
         {
             const double neighbours_sum =
-                (*prev_values)[row - 1][col] +
-                (*prev_values)[row + 1][col] +
-                (*prev_values)[row][col - 1] +
-                (*prev_values)[row][col + 1];
-            (*values)[row][col] = neighbours_sum / 4.0;
+                (*prev_matrix)[row - 1][col] +
+                (*prev_matrix)[row + 1][col] +
+                (*prev_matrix)[row][col - 1] +
+                (*prev_matrix)[row][col + 1];
+            (*matrix)[row][col] = neighbours_sum / 4.0;
         }
     }
 
     return NULL;
 }
 
-int solve_sync(size_t size, double (*values)[size][size], double precision)
+int solve_sync(size_t size, double (*matrix)[size][size], double precision)
 {
     int rc = 0;
-    double(*prev_values)[size][size];
-    rc = array_2d_try_alloc(size, &prev_values);
+    double(*prev_matrix)[size][size];
+    rc = array_2d_try_alloc(size, &prev_matrix);
     if (rc != 0)
         return rc;
 
-    memcpy(prev_values, values, sizeof(*prev_values));
+    memcpy(prev_matrix, matrix, sizeof(*prev_matrix));
     printf("\n");
 
     size_t iterations = 0;
@@ -247,16 +257,16 @@ int solve_sync(size_t size, double (*values)[size][size], double precision)
             for (size_t col = 1; col < size - 1; col++)
             {
                 double neighbours_sum =
-                    (*prev_values)[row - 1][col] +
-                    (*prev_values)[row + 1][col] +
-                    (*prev_values)[row][col - 1] +
-                    (*prev_values)[row][col + 1];
-                (*values)[row][col] = neighbours_sum / 4.0;
+                    (*prev_matrix)[row - 1][col] +
+                    (*prev_matrix)[row + 1][col] +
+                    (*prev_matrix)[row][col - 1] +
+                    (*prev_matrix)[row][col + 1];
+                (*matrix)[row][col] = neighbours_sum / 4.0;
             }
         }
 
-        converged = matrix_has_converged(precision, size, values, prev_values);
-        memcpy(prev_values, values, sizeof(*prev_values));
+        converged = matrix_has_converged(precision, size, matrix, prev_matrix);
+        memcpy(prev_matrix, matrix, sizeof(*prev_matrix));
         ++iterations;
 
         time(&now);
@@ -268,7 +278,7 @@ int solve_sync(size_t size, double (*values)[size][size], double precision)
     printf("[SYNC] solved in %ld iterations in %.0lfs\n",
            iterations, elapsed_time);
 
-    free(prev_values);
+    free(prev_matrix);
 
     return rc;
 }
@@ -319,10 +329,10 @@ int solve_try_alloc(size_t size, double (**matrix)[size][size],
     return rc;
 }
 
-int array_2d_try_alloc(size_t size, double (**values)[size][size])
+int array_2d_try_alloc(size_t size, double (**matrix)[size][size])
 {
-    *values = malloc(size * size * sizeof(double));
-    if (*values == NULL)
+    *matrix = malloc(size * size * sizeof(double));
+    if (*matrix == NULL)
     {
         size_t size_in_gb = size * size * sizeof(double) / 1000000000;
         fprintf(stderr, "Cannot allocate memory for %ldx%ld array. (%ldGB)\n",
