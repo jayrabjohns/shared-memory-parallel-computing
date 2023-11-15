@@ -10,13 +10,20 @@ cc -lpthread -o relaxation relaxation.c
 #include <stdlib.h>
 
 typedef struct solve_args solve_args;
+
+/*
+Contains all arguments for `solve_chunk` so that it can be executed on a thread.
+`matrix` and `prev_matrix` point to 2D square arrays.
+This is despite being single pointers.
+They are like this because structs fields cannot use standard array syntax.
+*/
 struct solve_args
 {
-    size_t size;
-    double *matrix;
-    double *prev_matrix;
-    size_t start_row;
-    size_t end_row;
+    size_t size;         // The length of one side of `matrix`.
+    double *matrix;      // Points to a 2D square array of length `size`.
+    double *prev_matrix; // Points to a 2D square array of length `size`.
+    size_t start_row;    // Row of `matrix` that computation starts.
+    size_t end_row;      // Row of `matrix` that computation finishes before.
 };
 
 /*
@@ -69,6 +76,19 @@ bool matrix_has_converged(
     const double (*m1)[size][size],
     const double (*m2)[size][size]);
 
+/*
+A helper function to allocate memory for all given arguments.
+It guarantees allocations either all succeed or all fail.
+Memory is not leaked if allocaitons fail.
+
+`size` is the length of one side of `matrix`.
+`matrix` will be allocated a pointer for a square 2D array of length `size`.
+`thread_count` controls the number of elements in `handles` & `args`.
+`handles` will be allocated a pointer for an array of size `thread_count`.
+`args` will be allocated a pointer for an array of size `thread_count`.
+
+Returns 0 if exited normally, 1 if allocation fails.
+*/
 int solve_try_alloc(
     size_t size,
     double (**matrix)[size][size],
@@ -76,13 +96,28 @@ int solve_try_alloc(
     pthread_t **handles,
     solve_args **args);
 
+/*
+A helper function to allocate memory for a 2D square matrix.
+It guarantees that memory is allocated as one contiguous block, allowing
+stdlib functions such as memcmp & memcpy can be used with the resulting array.
+
+`size` is the length of one side of `matrix`.
+`matrix` will be allocated a pointer for a square 2D array of length `size`.
+*/
 int array_2d_try_alloc(
     size_t size,
     double (**matrix)[size][size]);
 
+/*
+A helper function to print a square 2D array to a file or output stream.
+
+`size` is the length of one side of `matrix`.
+`matrix` points to a square 2D array of length `size`
+`stream` points to a file or output stream.
+*/
 void array_2d_print(
     size_t size,
-    double (*array)[size][size],
+    double (*matrix)[size][size],
     FILE *stream);
 
 #endif

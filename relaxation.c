@@ -19,7 +19,9 @@ static const char RESET_LINE[] = "\033[A";
    [.........]
    [1 0 ... 0]
  */
-void load_testcase_1(size_t size, double (*matrix)[size][size])
+void load_testcase_1(
+    size_t size,
+    double (*matrix)[size][size])
 {
     for (size_t j = 0; j < size; j++)
     {
@@ -36,7 +38,9 @@ void load_testcase_1(size_t size, double (*matrix)[size][size])
     }
 }
 
-void load_testcase_2(size_t size, double (*matrix)[size][size])
+void load_testcase_2(
+    size_t size,
+    double (*matrix)[size][size])
 {
     for (size_t i = 0; i < size; i++)
     {
@@ -59,49 +63,54 @@ void load_testcase_2(size_t size, double (*matrix)[size][size])
     }
 }
 
-int run(size_t size, double precision, size_t thread_count)
+int run(
+    size_t size,
+    double precision,
+    size_t thread_count)
 {
     printf("matrix size: %ld\nprecision: %f\nthread count:%ld\n",
            size, precision, thread_count);
 
-    // Arrange
+    // Arrange - allocate memory, initialise variables
     int rc = 0;
     double(*result_async)[size][size];
+    double(*result_sync)[size][size];
+
     rc = array_2d_try_alloc(size, &result_async);
     if (rc != 0)
         return rc;
 
-    load_testcase_1(size, result_async);
-
-    // Act
-    rc = solve(size, result_async, thread_count, precision);
+    rc = array_2d_try_alloc(size, &result_sync);
     if (rc != 0)
+    {
+        free(result_async);
         return rc;
+    }
 
-    // double(*result_sync)[size][size];
-    // rc = array_2d_try_alloc(size, &result_sync);
-    // if (rc != 0)
-    //     return rc;
+    load_testcase_1(size, result_async);
+    load_testcase_1(size, result_sync);
 
-    // load_testcase_1(size, result_sync);
-    // solve_sync(size, result_sync, precision);
+    // Act - perform the tested action
+    solve(size, result_async, thread_count, precision);
+    solve_sync(size, result_sync, precision);
 
-    // rc = memcmp(result_async, result_sync, sizeof(*result_async));
-    // if (rc == 0)
-    // {
-    //     printf("PASS solution matches synchronous implementation\n");
-    // }
-    // else
-    // {
-    //     rc = 1;
-    //     printf("FAIL solution doesn't match synchronous implementation\n");
-    //     printf("\nsync impl result\n");
-    //     array_2d_print(size, result_sync, stdout);
-    //     printf("async impl result:\n");
-    //     array_2d_print(size, result_async, stdout);
-    // }
+    // Assert - assert that the action performed successfully
+    rc = memcmp(result_async, result_sync, sizeof(*result_async));
+    if (rc == 0)
+    {
+        printf("PASS solution matches synchronous implementation\n");
+    }
+    else
+    {
+        rc = 1;
+        printf("FAIL solution doesn't match synchronous implementation\n");
+        printf("\nsync impl result\n");
+        array_2d_print(size, result_sync, stdout);
+        printf("async impl result:\n");
+        array_2d_print(size, result_async, stdout);
+    }
 
-    // free(result_sync);
+    free(result_sync);
     free(result_async);
 
     return rc;
@@ -109,54 +118,46 @@ int run(size_t size, double precision, size_t thread_count)
 
 int main(void)
 {
-    int rc = 0;
-    size_t sizes[] = {20000};
-    double precision = 0.001;
-    size_t thread_counts[] = {4, 2};
+    const size_t size = 10000;
+    const double precision = 0.001;
+    const size_t thread_count = 8;
 
-    for (size_t i = 0; i < sizeof(sizes) / sizeof(size_t) && rc == 0; i++)
-    {
-        for (size_t j = 0; j < sizeof(thread_counts) / sizeof(size_t) && rc == 0; j++)
-        {
-            rc = run(sizes[i], precision, thread_counts[j]);
-        }
-    }
-
-    // double(*result_sync)[20000][20000];
-    // rc = array_2d_try_alloc(20000, &result_sync);
-    // if (rc != 0)
-    //     return rc;
-
-    // load_testcase_1(20000, result_sync);
-    // solve_sync(20000, result_sync, precision);
-
-    // free(result_sync);
+    int rc;
+    rc = run(size, precision, thread_count);
 
     return rc;
 }
 
-int solve(size_t size, double (*matrix)[size][size], size_t thread_count,
-          double precision)
+int solve(
+    size_t size,
+    double (*matrix)[size][size],
+    size_t thread_count,
+    double precision)
 {
     thread_count = (size < thread_count ? size : thread_count);
     const size_t rows_per_thread = (size - 2) / thread_count;
     // With this way of assigning rows per thread, there's an edge case where
     // (thread_count - 2) > size and all work get delegates the final thread
-    // (since the division gets rounded to 0).
-    // This should be fine, because in any reasonable case where this would be
+    // (since the int division gets rounded to 0).
+    // This should be fine because in any reasonable case where this would be
     // noticeable, the size of the problem will be far higher than the number
-    // of cores available (asusming one thread per core)
+    // of cores available
 
     int rc;
     double(*prev_matrix)[size][size];
     pthread_t *handles;
     solve_args *args;
 
+    // Allocate everything at once
     rc = solve_try_alloc(size, &prev_matrix, thread_count, &handles, &args);
     if (rc != 0)
         return rc;
 
+    // Copy the previous iteration
     memcpy(prev_matrix, matrix, sizeof(*prev_matrix));
+
+    // Initialise arguments for each thread.
+    // Importantly, this decides which rows each thread will operate on
     for (size_t i = 0; i < thread_count; i++)
     {
         args[i].size = size;
@@ -180,6 +181,7 @@ int solve(size_t size, double (*matrix)[size][size], size_t thread_count,
     time(&start);
     while (!converged)
     {
+        // The start of a superstep
         for (size_t i = 0; i < thread_count; i++)
         {
             args[i].matrix = (double *)matrix;
@@ -188,11 +190,13 @@ int solve(size_t size, double (*matrix)[size][size], size_t thread_count,
             pthread_create(&handles[i], NULL, thunk, &args[i]);
         }
 
+        // Resynchronise all threads.
         for (size_t i = 0; i < thread_count; i++)
         {
             pthread_join(handles[i], NULL);
         }
 
+        // Check for convergence
         converged = matrix_has_converged(precision, size, matrix, prev_matrix);
         memcpy(prev_matrix, matrix, sizeof(*prev_matrix));
         ++iterations;
@@ -206,6 +210,7 @@ int solve(size_t size, double (*matrix)[size][size], size_t thread_count,
     printf("[ASYNC] solved in %ld iterations in %.0lfs\n",
            iterations, elapsed_time);
 
+    // Free resources
     free(prev_matrix);
     free(handles);
     free(args);
@@ -214,10 +219,11 @@ int solve(size_t size, double (*matrix)[size][size], size_t thread_count,
 
 void *solve_chunk(solve_args *args)
 {
-    size_t size = args->size;
+    const size_t size = args->size;
     double(*matrix)[size][size] = (double(*)[size][size])args->matrix;
     double(*prev_matrix)[size][size] = (double(*)[size][size])args->prev_matrix;
 
+    // Perform calculations from start row until end row
     for (size_t row = args->start_row; row < args->end_row; row++)
     {
         for (size_t col = 1; col < args->size - 1; col++)
@@ -234,14 +240,20 @@ void *solve_chunk(solve_args *args)
     return NULL;
 }
 
-int solve_sync(size_t size, double (*matrix)[size][size], double precision)
+int solve_sync(
+    size_t size,
+    double (*matrix)[size][size],
+    double precision)
 {
     int rc = 0;
     double(*prev_matrix)[size][size];
+
+    // Allocate memory for copy of previous iteration.
     rc = array_2d_try_alloc(size, &prev_matrix);
     if (rc != 0)
         return rc;
 
+    // Copy the previous iteration
     memcpy(prev_matrix, matrix, sizeof(*prev_matrix));
     printf("\n");
 
@@ -252,6 +264,7 @@ int solve_sync(size_t size, double (*matrix)[size][size], double precision)
     time(&start);
     while (!converged)
     {
+        // Perform calculatons for this iteration
         for (size_t row = 1; row < size - 1; row++)
         {
             for (size_t col = 1; col < size - 1; col++)
@@ -265,6 +278,7 @@ int solve_sync(size_t size, double (*matrix)[size][size], double precision)
             }
         }
 
+        // Check for convergence
         converged = matrix_has_converged(precision, size, matrix, prev_matrix);
         memcpy(prev_matrix, matrix, sizeof(*prev_matrix));
         ++iterations;
@@ -278,14 +292,17 @@ int solve_sync(size_t size, double (*matrix)[size][size], double precision)
     printf("[SYNC] solved in %ld iterations in %.0lfs\n",
            iterations, elapsed_time);
 
+    // Free resources
     free(prev_matrix);
 
     return rc;
 }
 
 bool matrix_has_converged(
-    double precision, size_t size,
-    const double (*m1)[size][size], const double (*m2)[size][size])
+    double precision,
+    size_t size,
+    const double (*m1)[size][size],
+    const double (*m2)[size][size])
 {
     bool has_converged = true;
     for (size_t row = 0; row < size && has_converged; row++)
@@ -300,8 +317,12 @@ bool matrix_has_converged(
     return has_converged;
 }
 
-int solve_try_alloc(size_t size, double (**matrix)[size][size],
-                    size_t thread_count, pthread_t **handles, solve_args **args)
+int solve_try_alloc(
+    size_t size,
+    double (**matrix)[size][size],
+    size_t thread_count,
+    pthread_t **handles,
+    solve_args **args)
 {
     int rc = 0;
     *handles = malloc(thread_count * sizeof(pthread_t));
@@ -335,7 +356,7 @@ int array_2d_try_alloc(size_t size, double (**matrix)[size][size])
     if (*matrix == NULL)
     {
         size_t size_in_gb = size * size * sizeof(double) / 1000000000;
-        fprintf(stderr, "Cannot allocate memory for %ldx%ld array. (%ldGB)\n",
+        fprintf(stderr, "Cannot allocate memory for %ldx%ld matrix. (%ldGB)\n",
                 size, size, size_in_gb);
         return 1;
     }
@@ -343,13 +364,16 @@ int array_2d_try_alloc(size_t size, double (**matrix)[size][size])
     return 0;
 }
 
-void array_2d_print(size_t size, double (*array)[size][size], FILE *stream)
+void array_2d_print(
+    size_t size,
+    double (*matrix)[size][size],
+    FILE *stream)
 {
     for (size_t i = 0; i < size; i++)
     {
         for (size_t j = 0; j < size; j++)
         {
-            fprintf(stream, "%f ", (*array)[i][j]);
+            fprintf(stream, "%f ", (*matrix)[i][j]);
         }
 
         fprintf(stream, "\n");
