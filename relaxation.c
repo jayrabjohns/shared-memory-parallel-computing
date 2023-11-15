@@ -38,15 +38,21 @@ void load_testcase_1(size_t size, double (*matrix)[size][size])
 
 void load_testcase_2(size_t size, double (*matrix)[size][size])
 {
-    for (size_t j = 0; j < size; j++)
+    for (size_t i = 0; i < size; i++)
     {
-        (*matrix)[0][j] = 1.0f;
+        (*matrix)[i][0] = 1.0;
+        // (*matrix)[i][size - 1] = i + i;
     }
 
-    for (size_t i = 1; i < size; i++)
+    for (size_t j = 0; j < size; j++)
     {
-        (*matrix)[i][0] = 1.0f;
-        for (size_t j = 1; j < size; j++)
+        (*matrix)[0][j] = (double)(j + j);
+        (*matrix)[size - 1][j] = (double)(j + j);
+    }
+
+    for (size_t i = 1; i < size - 1; i++)
+    {
+        for (size_t j = 1; j < size - 1; j++)
         {
             (*matrix)[i][j] = 0.0f;
         }
