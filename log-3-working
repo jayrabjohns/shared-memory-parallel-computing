@@ -1,0 +1,6 @@
+[H[2J[3Jthread: 0; start_row: 1; end_row: 3
+thread: 1; start_row: 3; end_row: 5
+thread: 2; start_row: 5; end_row: 9
+[ASYNC] solved in 27 iterations
+[SYNC] solved in 27 iterations
+PASS solution matches synchronous implementation

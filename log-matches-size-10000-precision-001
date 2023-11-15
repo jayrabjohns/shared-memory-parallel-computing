@@ -1,0 +1,14 @@
+thread count:8
+thread: 0; start_row: 1; end_row: 1250
+thread: 1; start_row: 1250; end_row: 2499
+thread: 2; start_row: 2499; end_row: 3748
+thread: 3; start_row: 3748; end_row: 4997
+thread: 4; start_row: 4997; end_row: 6246
+thread: 5; start_row: 6246; end_row: 7495
+thread: 6; start_row: 7495; end_row: 8744
+thread: 7; start_row: 8744; end_row: 9999
+[ASYNC] iteration: 361 (59s)
+[ASYNC] solved in 361 iterations in 59s
+[SYNC] iteration: 360 (85s)
+[SYNC] solved in 360 iterations in 85s
+PASS solution matches synchronous implementation
