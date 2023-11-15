@@ -1,6 +1,9 @@
 /*
 To build, use GCC with the -lpthread flag:
 cc -lpthread -o relaxation relaxation.c
+
+To run, simply run the executeable
+./relaxation
 */
 
 #ifndef RELAXATION_H
@@ -29,6 +32,8 @@ struct solve_args
 /*
 Performs the relaxation technique on a given matrix in parallel.
 
+Returns 0 if exited normally.
+
 `size` is the length of one side of the matrix.
 `matrix` points to a 2D square matrix with length equal to `size`.
 `thread_count` is the number of threads to use.
@@ -51,6 +56,8 @@ void *solve_chunk(solve_args *args);
 /*
 Performs the relaxation technique on a given matrix synchronously.
 
+Returns 0 if exited normally.
+
 `size` is the length of one side of the matrix.
 `matrix` points to a 2D square matrix with length equal to `size`.
 `precision` is the max difference between iterations to be classed as converged.
@@ -61,9 +68,25 @@ int solve_sync(
     double precision);
 
 /*
+Solves a given problem with both implementations, asserting results are equal.
+
+`size` is the length of one side of the matrix.
+`precision` is the max difference between iterations to be classed as converged.
+`thread_count` is the number of threads to use whne solving in parallel.
+`load_test_data` points to a function which provides a test input.
+*/
+int test_and_compare(
+    size_t size,
+    double precision,
+    size_t thread_count,
+    void (*load_test_data)(size_t, double (*)[size][size]));
+
+/*
 Checks if `m1` has converged with resepect to `m2`.
 In this case, all elements of `m1` should differ by at most `precision`
 from respective elements in `m2`.
+
+Returns true if `m1` has converged, false otherwise.
 
 `precision` is the max difference between iterations to be classed as converged.
 `size` is the length of one side of `m1` or `m2`.
@@ -87,7 +110,7 @@ Memory is not leaked if allocaitons fail.
 `handles` will be allocated a pointer for an array of size `thread_count`.
 `args` will be allocated a pointer for an array of size `thread_count`.
 
-Returns 0 if exited normally, 1 if allocation fails.
+Returns 0 if the allocation is successful.
 */
 int solve_try_alloc(
     size_t size,
@@ -100,6 +123,8 @@ int solve_try_alloc(
 A helper function to allocate memory for a 2D square matrix.
 It guarantees that memory is allocated as one contiguous block, allowing
 stdlib functions such as memcmp & memcpy can be used with the resulting array.
+
+Returns 0 if the allocation is successful.
 
 `size` is the length of one side of `matrix`.
 `matrix` will be allocated a pointer for a square 2D array of length `size`.
@@ -120,4 +145,32 @@ void array_2d_print(
     double (*matrix)[size][size],
     FILE *stream);
 
+/*
+Creates a nxn matrix of the form
+[1 1 ... 1]
+[1 0 ... 0]
+[.........]
+[1 0 ... 0]
+
+`size` is the length of one side of `matrix`
+`matrix` points to the 2D square array to store this matrix in.
+ */
+void load_testcase_1(
+    size_t size,
+    double (*matrix)[size][size]);
+
+/*
+Creates a nxn matrix of the form
+[0 2 4 ... 2i]
+[1 0 0 ... 0 ]
+[. . . ... . ]
+[1 0 0 ... 0 ]
+[0 2 4 ... 2i]
+
+`size` is the length of one side of `matrix`
+`matrix` points to the 2D square array to store this matrix in.
+ */
+void load_testcase_2(
+    size_t size,
+    double (*matrix)[size][size]);
 #endif

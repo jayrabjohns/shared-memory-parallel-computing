@@ -4,7 +4,6 @@
 #include <stdbool.h>
 #include <math.h>
 #include <pthread.h>
-#include <limits.h>
 #include <time.h>
 
 #include "relaxation.h"
@@ -13,117 +12,14 @@
 // Supported by Unix & Windows 10+
 static const char RESET_LINE[] = "\033[A";
 
-/* Creates a nxn matrix of the form
-   [1 1 ... 1]
-   [1 0 ... 0]
-   [.........]
-   [1 0 ... 0]
- */
-void load_testcase_1(
-    size_t size,
-    double (*matrix)[size][size])
-{
-    for (size_t j = 0; j < size; j++)
-    {
-        (*matrix)[0][j] = 1.0f;
-    }
-
-    for (size_t i = 1; i < size; i++)
-    {
-        (*matrix)[i][0] = 1.0f;
-        for (size_t j = 1; j < size; j++)
-        {
-            (*matrix)[i][j] = 0.0f;
-        }
-    }
-}
-
-void load_testcase_2(
-    size_t size,
-    double (*matrix)[size][size])
-{
-    for (size_t i = 0; i < size; i++)
-    {
-        (*matrix)[i][0] = 1.0;
-        // (*matrix)[i][size - 1] = i + i;
-    }
-
-    for (size_t j = 0; j < size; j++)
-    {
-        (*matrix)[0][j] = (double)(j + j);
-        (*matrix)[size - 1][j] = (double)(j + j);
-    }
-
-    for (size_t i = 1; i < size - 1; i++)
-    {
-        for (size_t j = 1; j < size - 1; j++)
-        {
-            (*matrix)[i][j] = 0.0f;
-        }
-    }
-}
-
-int run(
-    size_t size,
-    double precision,
-    size_t thread_count)
-{
-    printf("matrix size: %ld\nprecision: %f\nthread count:%ld\n",
-           size, precision, thread_count);
-
-    // Arrange - allocate memory, initialise variables
-    int rc = 0;
-    double(*result_async)[size][size];
-    double(*result_sync)[size][size];
-
-    rc = array_2d_try_alloc(size, &result_async);
-    if (rc != 0)
-        return rc;
-
-    rc = array_2d_try_alloc(size, &result_sync);
-    if (rc != 0)
-    {
-        free(result_async);
-        return rc;
-    }
-
-    load_testcase_1(size, result_async);
-    load_testcase_1(size, result_sync);
-
-    // Act - perform the tested action
-    solve(size, result_async, thread_count, precision);
-    solve_sync(size, result_sync, precision);
-
-    // Assert - assert that the action performed successfully
-    rc = memcmp(result_async, result_sync, sizeof(*result_async));
-    if (rc == 0)
-    {
-        printf("PASS solution matches synchronous implementation\n");
-    }
-    else
-    {
-        rc = 1;
-        printf("FAIL solution doesn't match synchronous implementation\n");
-        printf("\nsync impl result\n");
-        array_2d_print(size, result_sync, stdout);
-        printf("async impl result:\n");
-        array_2d_print(size, result_async, stdout);
-    }
-
-    free(result_sync);
-    free(result_async);
-
-    return rc;
-}
-
 int main(void)
 {
-    const size_t size = 10000;
+    const size_t size = 1000;
     const double precision = 0.001;
     const size_t thread_count = 8;
 
     int rc;
-    rc = run(size, precision, thread_count);
+    rc = test_and_compare(size, precision, thread_count, load_testcase_1);
 
     return rc;
 }
@@ -298,6 +194,60 @@ int solve_sync(
     return rc;
 }
 
+int test_and_compare(
+    size_t size,
+    double precision,
+    size_t thread_count,
+    void (*load_test_data)(size_t, double (*)[size][size]))
+{
+    printf("matrix size: %ld\nprecision: %f\nthread count:%ld\n",
+           size, precision, thread_count);
+
+    // Arrange - allocate memory, initialise variables
+    int rc = 0;
+    double(*result_async)[size][size];
+    double(*result_sync)[size][size];
+
+    rc = array_2d_try_alloc(size, &result_async);
+    if (rc != 0)
+        return rc;
+
+    rc = array_2d_try_alloc(size, &result_sync);
+    if (rc != 0)
+    {
+        free(result_async);
+        return rc;
+    }
+
+    (*load_test_data)(size, result_async);
+    (*load_test_data)(size, result_sync);
+
+    // Act - perform the tested action
+    solve(size, result_async, thread_count, precision);
+    solve_sync(size, result_sync, precision);
+
+    // Assert - assert that the action performed successfully
+    rc = memcmp(result_async, result_sync, sizeof(*result_async));
+    if (rc == 0)
+    {
+        printf("PASS solution matches synchronous implementation\n");
+    }
+    else
+    {
+        rc = 1;
+        printf("FAIL solution doesn't match synchronous implementation\n");
+        printf("\nsync impl result\n");
+        array_2d_print(size, result_sync, stdout);
+        printf("async impl result:\n");
+        array_2d_print(size, result_async, stdout);
+    }
+
+    free(result_sync);
+    free(result_async);
+
+    return rc;
+}
+
 bool matrix_has_converged(
     double precision,
     size_t size,
@@ -377,5 +327,48 @@ void array_2d_print(
         }
 
         fprintf(stream, "\n");
+    }
+}
+
+void load_testcase_1(
+    size_t size,
+    double (*matrix)[size][size])
+{
+    for (size_t j = 0; j < size; j++)
+    {
+        (*matrix)[0][j] = 1.0f;
+    }
+
+    for (size_t i = 1; i < size; i++)
+    {
+        (*matrix)[i][0] = 1.0f;
+        for (size_t j = 1; j < size; j++)
+        {
+            (*matrix)[i][j] = 0.0f;
+        }
+    }
+}
+
+void load_testcase_2(
+    size_t size,
+    double (*matrix)[size][size])
+{
+    for (size_t i = 0; i < size; i++)
+    {
+        (*matrix)[i][0] = 1.0;
+    }
+
+    for (size_t j = 0; j < size; j++)
+    {
+        (*matrix)[0][j] = (double)(j + j);
+        (*matrix)[size - 1][j] = (double)(j + j);
+    }
+
+    for (size_t i = 1; i < size - 1; i++)
+    {
+        for (size_t j = 1; j < size - 1; j++)
+        {
+            (*matrix)[i][j] = 0.0f;
+        }
     }
 }
